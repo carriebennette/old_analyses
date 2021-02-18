@@ -1,0 +1,176 @@
+version 14.1
+
+****** FIGURES FOR INNOVATION AND MEDICARE PART D ******
+
+**********************
+*** FIGURE 1: smoothed curves for average annual number of drugs approved by FDA
+**********************
+use "/Users/carriebennette/Dropbox/Papers/submitted/Aim 2 Medicare Part D and Pharmaceutical Innovation/list of FDA approvals v7.dta", clear
+
+g fdadaten = date(fdadate, "MDY", 2016)
+g year = year(fdadaten)
+keep if year>1993 & year<2016
+replace drugname = strtrim(drugname)
+replace indicationcat = "breast" if indicationc=="Breast"
+replace indicationcat = "child" if indicationc=="childhood leukemia"
+replace indicationcat = "lung" if indicationc=="Lung"
+
+replace indicationc = "pNET" if indication=="pancreatic neuroendocrine tumors (pNET)" | indication=="metastatic gastroenteropancreatic neuroendocrine tumors (GEP-NETs)" | indication=="progressive neuroendocrine tumors of pancreatic origin (PNET)"
+replace indicationc="sarcoma" if indication=="advanced soft tissue sarcoma" | indication=="unresectable or metastatic liposarcoma or leiomyosarcoma "
+
+* some drugs are for symptom management
+drop if drugname=="denosumab" | drugname=="triptorelin pamoate"
+drop if drugname=="methoxsalen" 
+
+replace drugname = strtrim(drugname)
+replace drugname = "imatinib mesylate" if drugname=="imatinib"
+replace indicationcat = "breast" if indicationc=="Breast"
+replace indicationcat = "lung" if indicationc=="Lung"
+* manually change one indication (for merge with DrugAbacus data; will combine with 'lung' later)
+*replace indicationcat = "mesothelioma" if indicationcat=="lung" & drugname=="pemetrexed" & year==2004
+
+replace indicationcat = "ALL" if drugname=="cytarabine liposomal" & indicationc=="childhood leukemia"
+*replace indicationcat = "ALL" if indicationc=="childhood leukemia" & (drugname~="imatinib mesylate" | drugname=="clofarabine")
+*replace indicationcat = "CML" if indicationc=="childhood leukemia" & drugname=="imatinib mesylate"
+
+* no idea why, but for some reason imatinib is showing up as two different drugs...
+replace drugname="imatinib mesylate" if drugname=="imatinib mesylate"
+bysort drugname (fdadaten): g first = _n==1
+
+* only interested in new approvals? 
+*keep if first==1
+
+* ORAL vs IV
+g oral = inlist(oral, "oral", "Tablets")
+g iv = inlist(oraliv, "Injection", "Intravenous", "intrathecal", "intravenous", "intramuscular", "subcutaneous")
+
+* get smoothed estimates
+
+bysort year: egen total_oral = sum(oral)
+bysort year: egen total_iv = sum(iv)
+bysort year: g tag=_n
+
+lowess total_oral year if tag==1, gen(smooth_oral) bwidth(.7)
+lowess total_iv year if tag==1, gen(smooth_iv) bwidth(.7)
+*lowess count_iv year, gen(smooth_iv, replace)
+
+line  smooth_iv smooth_oral year if year<2016, graphregion(color(white)) clcolor(navy navy) lwidth(thick thick) sort legend(off) clpattern(solid dash) ///
+	xtitle(" " "Year of approval") ytitle("Annual number of FDA approvals" "  ") 
+
+
+**********************
+*** FIGURE 2: percent change in number of FDA approvals, within cancer sites
+**********************
+cd "/Users/carriebennette/Dropbox/Papers/submitted/Aim 2 Medicare Part D and Pharmaceutical Innovation"
+use "list of FDA approvals v10.dta", clear
+*use "/Users/carriebennette/Dropbox/K12 projects/Early Independence Award/Aim 2 Medicare Part D and Pharmaceutical Innovation/list of FDA approvals v10.dta", clear
+
+replace indicationc = "pNET" if indication=="pancreatic neuroendocrine tumors (pNET)" | indication=="metastatic gastroenteropancreatic neuroendocrine tumors (GEP-NETs)" | indication=="progressive neuroendocrine tumors of pancreatic origin (PNET)"
+replace indicationc="sarcoma" if indication=="advanced soft tissue sarcoma" | indication=="unresectable or metastatic liposarcoma or leiomyosarcoma "
+
+* some drugs are for symptom management
+drop if drugname=="denosumab" | drugname=="triptorelin pamoate"
+drop if drugname=="methoxsalen" 
+
+replace drugname = strtrim(drugname)
+replace drugname = "imatinib mesylate" if drugname=="imatinib"
+replace indicationcat = "breast" if indicationc=="Breast"
+replace indicationcat = "lung" if indicationc=="Lung"
+* manually change one indication (for merge with DrugAbacus data; will combine with 'lung' later)
+*replace indicationcat = "mesothelioma" if indicationcat=="lung" & drugname=="pemetrexed" & year==2004
+
+replace indicationcat = "ALL" if drugname=="cytarabine liposomal" & indicationc=="childhood leukemia"
+*replace indicationcat = "ALL" if indicationc=="childhood leukemia" & (drugname~="imatinib mesylate" | drugname=="clofarabine")
+*replace indicationcat = "CML" if indicationc=="childhood leukemia" & drugname=="imatinib mesylate"
+
+* no idea why, but for some reason imatinib is showing up as two different drugs...
+replace drugname="imatinib mesylate" if drugname=="imatinib mesylate"
+
+
+* SET "POST" policy year here:
+global year = "2011"
+* SET "PRE" policy year here:
+global preyear = "2003"
+
+
+* SET DRUG TYPE here: 
+global type = "oral"
+
+g fdadaten = date(fdadate, "MDY", 2016)
+g year = year(fdadaten)
+
+g oral = inlist(oral, "oral", "Tablets")
+g iv = inlist(oraliv, "Injection", "Intravenous", "intrathecal", "intravenous", "intramuscular")
+
+g count_oral = .
+g count_iv = .
+
+g post2006 = year>=$year
+replace drugname = strtrim(drugname)
+replace indicationcat = "breast" if indicationc=="Breast"
+replace indicationcat = "lung" if indicationc=="Lung"
+
+bysort drug indicationc (year): g first = _n==1
+drop if year<1994
+
+foreach v in breast lung NHL ALL CML CLL colorectal basal melanoma ovarian cervical NET kidney myeloma pancreas gastric gist NET prostate melanoma thyroid liver {
+	qui count if $type==1  & year>=$year & indicationc=="`v'" 
+	qui replace count_oral = r(N) if year>=$year & indicationc=="`v'"
+
+	qui count if $type==1 & year<=$preyear & indicationc=="`v'" 
+	qui replace count_oral = r(N) if year<=$preyear & indicationc=="`v'"
+
+	qui count if $type==0 & year<=$preyear & indicationc=="`v'" 
+	qui replace count_oral = r(N) if year<=$preyear & indicationc=="`v'" & indicationcat~="CML" & indicationcat~="breast" & indicationcat~="NHL" & indicationcat~="colorectal" &  indicationcat~="lung" & indicationcat~="prostate"
+	
+}
+
+collapse (mean) count_oral, by(indicationc post2006)
+
+sort indicationc post2006
+
+g change = .
+replace change = ((count_oral[_n+1]))/count_oral[_n] if indicationc[_n+1]==indicationc[_n]
+
+g proportion65 = .69 if indicationc=="lung"
+replace propor = .61 if indicationc=="myeloma"
+replace prop = .59 if indicationc=="colorectal"
+replace prop = .42 if indicationc=="breast"
+replace prop = .55 if indicationc=="NHL"
+replace prop = .0 if indicationc=="child"
+replace prop = .65 if indicationc=="adult"
+replace prop = .57 if indicationc=="prostate"
+replace prop = .68 if indicationc=="CLL"
+replace prop = .49 if indicationc=="CML"
+replace prop = .727 if indicationc=="bladder"
+replace prop = .456 if indicationc=="melanoma"
+replace prop = .196 if indicationc=="thyroid"
+replace prop = .112 if indicationc=="ALL"
+replace prop = .455 if indicationc=="liver"
+replace prop = .454 if indicationc=="ovarian"
+replace prop = .196 if indicationc=="cervical"
+replace prop = .664 if indicationc=="pancreas"
+replace prop = .483 if indicationc=="kidney"
+replace prop = .551 if indicationc=="AML"
+replace prop = .250 if indicationc=="cns"
+replace prop = .690 if indicationc=="gastric"
+*need better estimate for basal, gist, NET (but doens't affect results)
+replace prop = 0.60 if indicationc=="basal"
+replace prop = 0.40 if indicationc=="gist"
+replace prop = 0.35 if indicationc=="NET"
+
+pwcorr change prop if indicationc~="ALL", sig
+
+g proportion2 = proportion*proportion
+regress change proportion65  proportion2
+predict xb
+predict se, stdp
+g xb_lb = xb-se*1.96
+g xb_ub = xb+se*1.96
+
+twoway rarea xb_lb xb_ub proportion65 if indicationc~="ALL" & proportion65>0.4 , fintensity(10) xtitle(" " "% Medicare-eligible") lcolor(white) lstyle(blank) sort || ///
+	line xb proportion65 if indicationc~="ALL" & proportion65>0.4, sort lpattern(dash) lcolor(navy)  || ///
+	scatter change proportion65 if indicationc~="ALL" & proportion65>0.4, mlabsize(tiny) xlabel(0.4 "40%" 0.6 "60%" 0.8 "80%") mlabel(indicationc) mlabcolor(black) ///
+	msize(small) mcolor(navy)  ytitle("Relative change in #FDA approvals") ///
+	ylabel( -2.5 "-250%" 0 "0%" 2.5 "250%" 5 "500%" 7.5 "750%" 10 "1000%", angle(0)) graphregion(color(white)) legend(off) mcolor(navy) ///
+	aspectratio(1.75) 
